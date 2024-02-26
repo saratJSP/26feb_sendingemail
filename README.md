@@ -1,3 +1,10 @@
+
+
+
+
+
+
+
 public class OrderValidationHelper {
     public static void Checking_orders(Order order){
         List<OrderItem> orderItems = [SELECT Id, Product2Id, Quantity, Product2.Inventory__c from OrderItem where OrderId =: order.Id];
