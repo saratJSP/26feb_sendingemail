@@ -1,4 +1,4 @@
-trigger OrderValidationTrigger on Order (before insert, before update, after insert, after update) {
+trigger OrderValidationTrigger on Order (before insert, before update) {
     if (Trigger.isBefore) {
         if (Trigger.isInsert || Trigger.isUpdate) {
             if (Trigger.isInsert) {
@@ -9,6 +9,8 @@ trigger OrderValidationTrigger on Order (before insert, before update, after ins
             }
         }
     }
+}
+
 
 
 
