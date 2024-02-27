@@ -1,57 +1,84 @@
-trigger Order_validation on Order (before insert ,before update ) {
-    
-    
-    for (Order order : Trigger.new) {
-        OrderValidationHelper.Checking_orders(order);
-        
-        OrderValidationHelper.sending_email_notifications(order.Id);
-    
+trigger OrderValidationTrigger on Order (before insert, before update, after insert, after update) {
+    if (Trigger.isBefore) {
+        if (Trigger.isInsert || Trigger.isUpdate) {
+            if (Trigger.isInsert) {
+                OrderValidationHelper.validateOrdersBeforeInsert(Trigger.new);
+            }
+            if (Trigger.isUpdate) {
+                OrderValidationHelper.validateOrdersBeforeUpdate(Trigger.new, Trigger.oldMap);
+            }
+        }
+    }
+
+
+
+    if (Trigger.isAfter) {
+        if (Trigger.isInsert || Trigger.isUpdate) {
+            Set<Id> orderIds = new Set<Id>();
+            for (Order ord : Trigger.new) {
+                if (!ord.IsOrderValid__c) {
+                    orderIds.add(ord.Id);
+                }
+            }
+            if (!orderIds.isEmpty()) {
+                OrderValidationHelper.sendOrderValidationEmail(orderIds);
+            }
+        }
+    }
 }
-
-}
-
-
 
 public class OrderValidationHelper {
-    public static void Checking_orders(Order order){
-        List<OrderItem> orderItems = [SELECT Id, Product2Id, Quantity, Product2.Inventory__c from OrderItem where OrderId =: order.Id];
-        string validation_error = '';
-        Boolean isValid = true;
-        
-        
-        for (OrderItem Item :orderItems){
-            if (item.Product2.Inventory__c <=  0){
-                isValid = false ;
-                validation_error += item.Id + 'insufficient stock ';
-            }
-             if (item.Quantity <=  0) {
-                isValid = false;
-                validation_error +=  item.Id + '  Quantity must be greater than zero.\n';
-            }
-            
-        }
-        order.IsOrderValid__c = isValid;
-        order.ValidationErrors__c = validation_error;
-        
- 
-    }
-    @future 
-    public static void sending_email_notifications(Id orderId){
-        Order order = [SELECT Id , Owner.Email,IsOrderValid__c,ValidationErrors__c from Order where Id =: orderId];
-        if (! order.IsOrderValid__c){
-            
-              Messaging.SingleEmailMessage mail = new Messaging.SingleEmailMessage();
-            String[] toaddresses = new String[] {'saratdhoni7@gmail.com'}; 
-
-            mail.setToAddresses(toaddresses);
-            mail.setSubject('Order Validation Status');
-            mail.setPlainTextBody('Hi ' + order.Owner.Name + ',\n\n' +
-                                  'Your order ' + order.Name + ' is ' + (order.IsOrderValid__c ? 'valid' : 'invalid') + '.\n\n' +
-                                  'Validation Errors:\n' + order.ValidationErrors__c);
-            Messaging.sendEmail(new Messaging.SingleEmailMessage[] {mail});
-        }
-        
+    
+    public static void validateOrdersBeforeInsert(List<Order> newOrders) {
+        validateOrders(newOrders);
     }
     
+    public static void validateOrdersBeforeUpdate(List<Order> newOrders, Map<Id, Order> oldMap) {
+        validateOrders(newOrders);
+    }
+    
+   private static void validateOrders(List<Order> orders) {
+    for(Order ord : orders) {
+        if(ord.IsDeleted) continue;
+        
+        List<String> errorMessages = new List<String>();
+        for(OrderItem item : [SELECT Id, Product2Id, Quantity, Product2.Inventory__c FROM OrderItem WHERE OrderId = :ord.Id]) {
+            if(item.Quantity <= 0) {
+                errorMessages.add('Invalid quantity for OrderItem with ID: ' + item.Id);
+            }
+            if(!Pattern.matches('PROD-\\d{4}', item.Product2Id)) {
+                errorMessages.add('Invalid product ID for OrderItem with ID: ' + item.Id);
+            }
+            if(item.Product2.Inventory__c <= 0) {
+                errorMessages.add('Insufficient stock for OrderItem with ID: ' + item.Id);
+            }
+        }
+        
+        if(!errorMessages.isEmpty()) {
+            ord.IsOrderValid__c = false;
+            ord.ValidationErrors__c = String.join(errorMessages, ', ');
+        } else {
+            ord.IsOrderValid__c = true; 
+            ord.ValidationErrors__c = null; 
+        }
+    }
+}
 
+    
+    @future
+    public static void sendOrderValidationEmail(Set<Id> orderIds) {
+        List<Order> orders = [SELECT Id, Owner.Email, Owner.Name, IsOrderValid__c, ValidationErrors__c FROM Order WHERE Id IN :orderIds];
+        for (Order order : orders) {
+            if (!order.IsOrderValid__c) {
+                Messaging.SingleEmailMessage mail = new Messaging.SingleEmailMessage();
+                mail.setToAddresses(new String[] {order.Owner.Email});
+                mail.setSubject('Order Validation Status');
+                String emailBody = 'Dear ' + order.Owner.Name + ',\n\n' +
+                                      'Your order ' + order.Id + ' is ' + (order.IsOrderValid__c ? 'valid' : 'invalid') + '.\n\n' +
+                                      'Validation Errors:\n' + order.ValidationErrors__c;
+                mail.setPlainTextBody(emailBody);
+                Messaging.sendEmail(new Messaging.SingleEmailMessage[] {mail});
+            }
+        }
+    }
 }
