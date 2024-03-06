@@ -1,0 +1,67 @@
+trigger OpportunityTrigger on Opportunity (after insert, after update, after delete) {
+    Set<Id> accountIds = new Set<Id>();
+    Set<Id> userIds = new Set<Id>();
+
+    if (Trigger.isInsert || Trigger.isUpdate) {
+        for (Opportunity opp : Trigger.new) {
+            accountIds.add(opp.AccountId);
+            userIds.add(opp.OwnerId);
+        }
+    }
+    if (Trigger.isDelete) {
+        for (Opportunity opp : Trigger.old) {
+            accountIds.add(opp.AccountId);
+            userIds.add(opp.OwnerId);
+        }
+    }
+
+    OpportunityAsyncUpdateHelper.scheduleUpdate(accountIds, userIds);
+}
+
+
+
+public class OpportunityAsyncUpdateHelper {
+    @future
+    public static void scheduleUpdate(Set<Id> accountIds, Set<Id> userIds) {
+        // Maps to store Account and User IDs 
+        Map<Id, Integer> accountCounts = new Map<Id, Integer>();
+        Map<Id, Integer> userCounts = new Map<Id, Integer>();
+
+        // Query for Opportunities based on IDs
+        List<Opportunity> opportunities = [SELECT Id, AccountId, OwnerId FROM Opportunity WHERE AccountId IN :accountIds OR OwnerId IN :userIds];
+
+        // Calculate counts for each Account and User
+        for (Opportunity opp : opportunities) {
+            // Increment count for the associated Account
+            if (accountCounts.containsKey(opp.AccountId)) {
+                accountCounts.put(opp.AccountId, accountCounts.get(opp.AccountId) +   1);
+            } else {
+                accountCounts.put(opp.AccountId,   1);
+            }
+
+            // Incrementing count for associated user
+            if (userCounts.containsKey(opp.OwnerId)) {
+                userCounts.put(opp.OwnerId, userCounts.get(opp.OwnerId) +   1);
+            } else {
+                userCounts.put(opp.OwnerId,   1);
+            }
+        }
+
+        // Updating Account and User records
+        List<Account> accountsToUpdate = new List<Account>();
+        for (Id accId : accountIds) {
+            Account accToUpdate = new Account(Id = accId);
+            accToUpdate.Count_Of_Opportunity__c = accountCounts.containsKey(accId) ? accountCounts.get(accId) :   0;
+            accountsToUpdate.add(accToUpdate);
+        }
+        update accountsToUpdate;
+
+        List<User> usersToUpdate = new List<User>();
+        for (Id userId : userIds) {
+            User userToUpdate = new User(Id = userId);
+            userToUpdate.Count_Of_Opportunity__c = userCounts.containsKey(userId) ? userCounts.get(userId) :   0;
+            usersToUpdate.add(userToUpdate);
+        }
+        update usersToUpdate;
+    }
+}
