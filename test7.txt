@@ -1,0 +1,61 @@
+public class Creating_service_opportunities implements Schedulable {
+    public void execute(SchedulableContext sc) {
+        List<Opportunity> closedOpp = [SELECT Id, Name, AccountId FROM Opportunity WHERE RecordType.Name = 'New Deal' AND CloseDate <= :System.today().addMonths(-6) AND StageName = 'Closed Won'];
+        
+        List<Opportunity> newOppForService = new List<Opportunity>();
+        
+        for (Opportunity opp : closedOpp) {
+            Opportunity newOpp = new Opportunity(
+                Name = opp.Name,
+                AccountId = opp.AccountId,
+                CloseDate = System.today().addDays(30), 
+                RecordTypeId = [SELECT Id FROM RecordType WHERE SObjectType = 'Opportunity' AND DeveloperName = 'Servicing'].Id,
+                StageName = 'Qualification' 
+            );
+            newOppForService.add(newOpp);
+        }
+        
+        insert newOppForService;
+        System.debug('Inserted');
+    }
+    
+    
+} 
+
+anonymous window code 
+
+
+Creating_service_opportunities sa = new Creating_service_opportunities();
+String cronExpression = '0 0 0 1 * ? *'; 
+System.Schedule('CreatingServiceOpportunitiesJob' , cronExpression, sa);
+
+
+
+
+
+question 1
+
+
+
+
+
+public class objectdata_to_map {
+    public static Map<String, List<SObject>> converting_into_map(List<SObject> givenobject, String fieldname) {
+        Map<String, List<SObject>> resultMap = new Map<String, List<SObject>>();
+        for (SObject s : givenobject) { 
+            String Fvalue = (String) s.get(fieldname);
+            if (!resultMap.containsKey(Fvalue)) {             
+                resultMap.put(Fvalue, new List<SObject>());
+            }
+            resultMap.get(Fvalue).add(s);
+        }
+        
+        return resultMap;
+    }
+}
+
+
+/*List<Account> accounts = [SELECT Id, Name, Industry FROM Account LIMIT 5];
+Map<String, List<Account>> groupedAccounts = objectdata_to_map.converting_into_map(accounts, 'Industry');
+System.debug(groupedAccounts);
+*/
